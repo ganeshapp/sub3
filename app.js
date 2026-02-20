@@ -20,6 +20,8 @@ const DEFAULTS = {
 
 const CANVAS_PAD = { top: 24, right: 16, bottom: 32, left: 52 };
 const INCLINE_MAX_PX = 50;
+const PUBLIC_REPO = 'ganeshapp/sub3';
+const PUBLIC_PATH = 'workouts';
 
 // ── State ─────────────────────────────────────────────────────
 
@@ -28,6 +30,7 @@ let selectedId = null;
 let hoveredId = null;
 let nextId = 1;
 let blockRects = [];
+let activeTab = 'design';
 
 // ── DOM References ────────────────────────────────────────────
 
@@ -43,6 +46,7 @@ const DOM = {
   statSpeed:     $('#stat-speed'),
   statPace:      $('#stat-pace'),
   statElevation: $('#stat-elevation'),
+  statsBar:      $('#stats-bar'),
   emptyState:    $('#canvas-empty'),
   chipsContainer:$('#block-chips'),
   chipsPlaceholder: $('#chips-placeholder'),
@@ -62,6 +66,12 @@ const DOM = {
   valEndSpeed:   $('#val-end-speed'),
   valStartIncline: $('#val-start-incline'),
   valEndIncline:   $('#val-end-incline'),
+  settingsModal: $('#settings-modal'),
+  settingPat:    $('#setting-pat'),
+  settingRepo:   $('#setting-repo'),
+  settingPath:   $('#setting-path'),
+  tabMyCollection: $('#tab-my-collection'),
+  fileInput:     $('#file-input'),
 };
 
 // ── Utility ───────────────────────────────────────────────────
@@ -81,6 +91,127 @@ function fmtTimeShort(seconds) {
 }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function sanitizeFilename(name) {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+// ── Toast Notifications ───────────────────────────────────────
+
+let toastTimer = null;
+
+function showToast(msg, type = 'success') {
+  const inner = $('#toast-inner');
+  const icon  = $('#toast-icon');
+  const text  = $('#toast-msg');
+
+  text.textContent = msg;
+
+  const icons = {
+    success: 'ph-check-circle',
+    error:   'ph-warning-circle',
+    info:    'ph-info',
+    loading: 'ph-spinner-gap',
+  };
+  const colors = {
+    success: 'text-emerald-400',
+    error:   'text-red-400',
+    info:    'text-cyan-400',
+    loading: 'text-slate-400',
+  };
+
+  icon.className = `ph ${icons[type] || icons.info} text-lg ${colors[type] || colors.info}`;
+  if (type === 'loading') icon.classList.add('animate-spin');
+
+  inner.classList.remove('toast-hidden');
+  inner.classList.add('toast-visible');
+
+  clearTimeout(toastTimer);
+  if (type !== 'loading') {
+    toastTimer = setTimeout(() => {
+      inner.classList.remove('toast-visible');
+      inner.classList.add('toast-hidden');
+    }, 3000);
+  }
+}
+
+function hideToast() {
+  const inner = $('#toast-inner');
+  inner.classList.remove('toast-visible');
+  inner.classList.add('toast-hidden');
+  clearTimeout(toastTimer);
+}
+
+// ── Settings (localStorage) ──────────────────────────────────
+
+function getSettings() {
+  return {
+    pat:  localStorage.getItem('sub3_pat') || '',
+    repo: localStorage.getItem('sub3_repo') || '',
+    path: localStorage.getItem('sub3_path') || '/',
+  };
+}
+
+function openSettings() {
+  const s = getSettings();
+  DOM.settingPat.value  = s.pat;
+  DOM.settingRepo.value = s.repo;
+  DOM.settingPath.value = s.path;
+  DOM.settingsModal.classList.remove('hidden');
+}
+
+function closeSettings() {
+  DOM.settingsModal.classList.add('hidden');
+}
+
+function saveSettings() {
+  const pat  = DOM.settingPat.value.trim();
+  const repo = DOM.settingRepo.value.trim();
+  const path = DOM.settingPath.value.trim() || '/';
+
+  localStorage.setItem('sub3_pat', pat);
+  localStorage.setItem('sub3_repo', repo);
+  localStorage.setItem('sub3_path', path);
+
+  closeSettings();
+  refreshMyCollectionTab();
+  showToast('Settings saved', 'success');
+}
+
+function refreshMyCollectionTab() {
+  const { pat } = getSettings();
+  DOM.tabMyCollection.classList.toggle('hidden', !pat);
+}
+
+// ── Tab Navigation ────────────────────────────────────────────
+
+function switchTab(tab) {
+  activeTab = tab;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+
+  document.querySelectorAll('.view-panel').forEach(panel => {
+    panel.classList.add('hidden');
+  });
+
+  const viewId = `view-${tab}`;
+  const view = document.getElementById(viewId);
+  if (view) {
+    view.classList.remove('hidden');
+  }
+
+  DOM.statsBar.classList.toggle('hidden', tab !== 'design');
+
+  if (tab === 'design') {
+    setTimeout(() => renderCanvas(), 50);
+  } else if (tab === 'collection') {
+    fetchCollection();
+  } else if (tab === 'my-collection') {
+    fetchMyCollection();
+  }
+}
 
 // ── Stats Calculation (per spec formulas) ─────────────────────
 
@@ -539,16 +670,60 @@ canvas.addEventListener('mouseleave', () => {
   renderCanvas();
 });
 
-// ── Export ─────────────────────────────────────────────────────
+// ── Import JSON ───────────────────────────────────────────────
 
-function exportWorkout() {
-  if (intervals.length === 0) return;
+function importJSON() {
+  DOM.fileInput.click();
+}
 
+DOM.fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+
+      if (!data.intervals || !Array.isArray(data.intervals)) {
+        showToast('Invalid workout file: missing intervals array', 'error');
+        return;
+      }
+
+      intervals = data.intervals.map((b, i) => ({
+        id: nextId++,
+        type: b.type || 'active',
+        duration_seconds: b.duration_seconds || 300,
+        start_speed_kmh: b.start_speed_kmh ?? 5,
+        end_speed_kmh: b.end_speed_kmh ?? 5,
+        start_incline_pct: b.start_incline_pct ?? 0,
+        end_incline_pct: b.end_incline_pct ?? 0,
+      }));
+
+      if (data.metadata) {
+        DOM.inputName.value = data.metadata.name || 'Imported Workout';
+        DOM.inputDesc.value = data.metadata.description || '';
+      }
+
+      selectedId = null;
+      render();
+      showToast(`Imported ${intervals.length} intervals from ${file.name}`, 'success');
+    } catch (err) {
+      showToast('Failed to parse JSON file', 'error');
+    }
+  };
+  reader.readAsText(file);
+  DOM.fileInput.value = '';
+});
+
+// ── Export / Download ─────────────────────────────────────────
+
+function buildPayload() {
   const stats = calcStats();
   const name = DOM.inputName.value.trim() || 'My Workout';
   const desc = DOM.inputDesc.value.trim();
 
-  const payload = {
+  return {
     metadata: {
       name,
       description: desc,
@@ -568,25 +743,234 @@ function exportWorkout() {
       end_incline_pct: b.end_incline_pct,
     })),
   };
+}
 
+function exportWorkout() {
+  if (intervals.length === 0) return;
+
+  const payload = buildPayload();
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
+  a.download = `${sanitizeFilename(payload.metadata.name)}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
+// ── Sync to Cloud (GitHub PUT) ────────────────────────────────
+
+async function syncToCloud() {
+  if (intervals.length === 0) {
+    showToast('Nothing to sync — add some intervals first', 'info');
+    return;
+  }
+
+  const { pat, repo, path } = getSettings();
+  if (!pat || !repo) {
+    showToast('Configure GitHub settings first', 'error');
+    openSettings();
+    return;
+  }
+
+  const payload = buildPayload();
+  const json = JSON.stringify(payload, null, 2);
+  const content = btoa(unescape(encodeURIComponent(json)));
+  const name = sanitizeFilename(payload.metadata.name);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `${name}_${timestamp}.json`;
+
+  const folder = path.replace(/^\/+|\/+$/g, '');
+  const filePath = folder ? `${folder}/${filename}` : filename;
+
+  showToast('Syncing to GitHub...', 'loading');
+
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${repo}/contents/${filePath}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify({
+        message: `Add workout: ${payload.metadata.name}`,
+        content,
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) throw new Error('Unauthorized — check your PAT');
+      if (resp.status === 404) throw new Error('Repository not found');
+      throw new Error(err.message || `GitHub API error ${resp.status}`);
+    }
+
+    showToast(`Synced "${filename}" to ${repo}`, 'success');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+// ── Collection Fetching ───────────────────────────────────────
+
+async function fetchCollection() {
+  const grid    = $('#collection-grid');
+  const loading = $('#collection-loading');
+  const error   = $('#collection-error');
+  const empty   = $('#collection-empty');
+
+  grid.classList.add('hidden');
+  error.classList.add('hidden');
+  empty.classList.add('hidden');
+  loading.classList.remove('hidden');
+
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${PUBLIC_REPO}/contents/${PUBLIC_PATH}`);
+
+    if (!resp.ok) {
+      if (resp.status === 404) {
+        loading.classList.add('hidden');
+        empty.classList.remove('hidden');
+        return;
+      }
+      throw new Error(`HTTP ${resp.status}`);
+    }
+
+    const files = (await resp.json()).filter(f => f.name.endsWith('.json'));
+    loading.classList.add('hidden');
+
+    if (files.length === 0) {
+      empty.classList.remove('hidden');
+      return;
+    }
+
+    grid.innerHTML = '';
+    grid.classList.remove('hidden');
+
+    for (const file of files) {
+      grid.appendChild(buildFileCard(file, false));
+    }
+  } catch (err) {
+    loading.classList.add('hidden');
+    error.classList.remove('hidden');
+    $('#collection-error-msg').textContent = `Failed to load: ${err.message}`;
+  }
+}
+
+async function fetchMyCollection() {
+  const { pat, repo, path } = getSettings();
+  if (!pat || !repo) return;
+
+  const grid    = $('#my-collection-grid');
+  const loading = $('#my-collection-loading');
+  const error   = $('#my-collection-error');
+  const empty   = $('#my-collection-empty');
+
+  grid.classList.add('hidden');
+  error.classList.add('hidden');
+  empty.classList.add('hidden');
+  loading.classList.remove('hidden');
+
+  $('#my-collection-subtitle').textContent = `${repo} / ${path}`;
+
+  const folder = path.replace(/^\/+|\/+$/g, '');
+  const apiPath = folder || '';
+
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${repo}/contents/${apiPath}`, {
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+
+    if (!resp.ok) {
+      if (resp.status === 401) throw new Error('Unauthorized — check your PAT');
+      if (resp.status === 404) {
+        loading.classList.add('hidden');
+        empty.classList.remove('hidden');
+        return;
+      }
+      throw new Error(`HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    const files = (Array.isArray(data) ? data : []).filter(f => f.name.endsWith('.json'));
+    loading.classList.add('hidden');
+
+    if (files.length === 0) {
+      empty.classList.remove('hidden');
+      return;
+    }
+
+    grid.innerHTML = '';
+    grid.classList.remove('hidden');
+
+    for (const file of files) {
+      grid.appendChild(buildFileCard(file, true));
+    }
+  } catch (err) {
+    loading.classList.add('hidden');
+    error.classList.remove('hidden');
+    $('#my-collection-error-msg').textContent = `Failed to load: ${err.message}`;
+  }
+}
+
+// ── File Card Builder (simple list for now, full cards in Step 3) ──
+
+function buildFileCard(file, isPrivate) {
+  const card = document.createElement('div');
+  card.className = 'workout-card fade-in';
+
+  const name = file.name.replace(/\.json$/, '').replace(/_/g, ' ');
+  const sizeKB = file.size ? (file.size / 1024).toFixed(1) : '?';
+
+  card.innerHTML = `
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <i class="ph ph-barbell text-cyan-400 text-base flex-shrink-0"></i>
+          <span class="text-sm font-semibold truncate">${name}</span>
+        </div>
+        <div class="flex items-center gap-3 text-[11px] text-slate-500">
+          <span><i class="ph ph-file text-xs"></i> ${sizeKB} KB</span>
+          ${isPrivate ? '<span class="text-violet-400/70"><i class="ph ph-lock-simple text-xs"></i> Private</span>' : '<span class="text-emerald-400/70"><i class="ph ph-globe text-xs"></i> Public</span>'}
+        </div>
+      </div>
+      <button onclick="downloadFromUrl('${file.download_url}', '${file.name}')"
+        class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-cyan-400 transition" title="Download">
+        <i class="ph ph-download-simple text-sm"></i>
+      </button>
+    </div>
+  `;
+
+  return card;
+}
+
+function downloadFromUrl(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast(`Downloading ${filename}`, 'info');
+}
+
 // ── Resize Observer ───────────────────────────────────────────
 
-const resizeObserver = new ResizeObserver(() => renderCanvas());
+const resizeObserver = new ResizeObserver(() => {
+  if (activeTab === 'design') renderCanvas();
+});
 resizeObserver.observe(wrapper);
 
 // ── Init ──────────────────────────────────────────────────────
 
+refreshMyCollectionTab();
 render();
