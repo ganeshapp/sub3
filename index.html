@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sub3 — Workout Builder</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans h-screen flex flex-col overflow-hidden">
+
+  <!-- ─── Stats Header ─── -->
+  <header class="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
+    <div class="flex items-center justify-between px-5 py-3">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center">
+            <i class="ph-bold ph-person-simple-run text-white text-lg"></i>
+          </div>
+          <span class="text-lg font-bold tracking-tight">Sub3</span>
+          <span class="text-xs text-slate-500 italic ml-1 hidden sm:inline">Bhaag DK Bose</span>
+        </div>
+      </div>
+      <div id="stats-bar" class="flex items-center gap-1">
+        <div class="stat-card">
+          <i class="ph ph-timer text-cyan-400"></i>
+          <div>
+            <div class="stat-label">Time</div>
+            <div class="stat-value" id="stat-time">00:00</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <i class="ph ph-path text-emerald-400"></i>
+          <div>
+            <div class="stat-label">Distance</div>
+            <div class="stat-value" id="stat-distance">0.00 km</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <i class="ph ph-lightning text-amber-400"></i>
+          <div>
+            <div class="stat-label">Avg Speed</div>
+            <div class="stat-value" id="stat-speed">0.0 km/h</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <i class="ph ph-gauge text-violet-400"></i>
+          <div>
+            <div class="stat-label">Avg Pace</div>
+            <div class="stat-value" id="stat-pace">--:-- /km</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <i class="ph ph-mountains text-orange-400"></i>
+          <div>
+            <div class="stat-label">Elevation</div>
+            <div class="stat-value" id="stat-elevation">0 m</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── Main Layout ─── -->
+  <main class="flex flex-1 min-h-0 overflow-hidden">
+
+    <!-- ─── Canvas Area ─── -->
+    <section class="flex-1 flex flex-col min-w-0 min-h-0 p-4 gap-3">
+      <div id="canvas-wrapper" class="flex-1 relative min-h-0 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
+        <canvas id="workout-canvas"></canvas>
+        <div id="canvas-empty" class="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none">
+          <div class="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center">
+            <i class="ph-light ph-plus-circle text-slate-600 text-5xl"></i>
+          </div>
+          <div class="text-center">
+            <p class="text-slate-500 text-sm font-medium">No intervals yet</p>
+            <p class="text-slate-600 text-xs mt-1">Add blocks from the sidebar to build your workout</p>
+          </div>
+        </div>
+        <div id="canvas-tooltip" class="canvas-tooltip hidden"></div>
+      </div>
+      <!-- Block list chips -->
+      <div id="block-chips" class="flex gap-1.5 items-center overflow-x-auto flex-nowrap scrollbar-hide pb-0.5">
+        <span class="text-xs text-slate-600 select-none whitespace-nowrap" id="chips-placeholder">Your interval blocks will appear here</span>
+      </div>
+    </section>
+
+    <!-- ─── Editor Sidebar ─── -->
+    <aside id="sidebar" class="w-[320px] flex-shrink-0 bg-slate-900/60 border-l border-slate-800 flex flex-col min-h-0">
+
+      <!-- Global Settings -->
+      <div class="px-3 pt-3 pb-2 border-b border-slate-800">
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Workout Name</label>
+        <input type="text" id="input-name" value="My Workout"
+          class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40 transition">
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1 mt-2">Description</label>
+        <input type="text" id="input-desc" placeholder="Describe your workout..."
+          class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40 transition">
+      </div>
+
+      <!-- Quick-Add Buttons -->
+      <div class="px-3 py-2 border-b border-slate-800">
+        <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Add Interval</label>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button onclick="addInterval('warmup')" class="add-btn add-btn-warmup" title="Warmup">
+            <i class="ph-bold ph-flame"></i> <span class="text-[11px]">Warm</span>
+          </button>
+          <button onclick="addInterval('active')" class="add-btn add-btn-active" title="Active">
+            <i class="ph-bold ph-lightning"></i> <span class="text-[11px]">Active</span>
+          </button>
+          <button onclick="addInterval('recovery')" class="add-btn add-btn-recovery" title="Recovery">
+            <i class="ph-bold ph-heart-half"></i> <span class="text-[11px]">Recov</span>
+          </button>
+          <button onclick="addInterval('cooldown')" class="add-btn add-btn-cooldown" title="Cooldown">
+            <i class="ph-bold ph-snowflake"></i> <span class="text-[11px]">Cool</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Block Inspector -->
+      <div id="inspector" class="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+        <div id="inspector-empty" class="flex flex-col items-center justify-center h-full gap-2 text-center">
+          <i class="ph-light ph-cursor-click text-slate-700 text-3xl"></i>
+          <p class="text-slate-600 text-xs">Select a block on the timeline<br>to edit its properties</p>
+        </div>
+
+        <div id="inspector-content" class="hidden space-y-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span id="inspector-badge" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide"></span>
+              <span id="inspector-id" class="text-[10px] text-slate-600 font-mono"></span>
+            </div>
+            <button onclick="deselectBlock()" class="text-slate-600 hover:text-slate-400 transition">
+              <i class="ph ph-x text-base"></i>
+            </button>
+          </div>
+
+          <!-- Duration -->
+          <div>
+            <label class="slider-label">Duration</label>
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1 flex-1">
+                <input type="number" id="input-dur-min" min="0" max="120" value="5"
+                  class="num-input w-14 text-xs py-1" onchange="onDurationChange()">
+                <span class="text-[11px] text-slate-500">min</span>
+              </div>
+              <div class="flex items-center gap-1 flex-1">
+                <input type="number" id="input-dur-sec" min="0" max="59" value="0"
+                  class="num-input w-14 text-xs py-1" onchange="onDurationChange()">
+                <span class="text-[11px] text-slate-500">sec</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Speed -->
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div>
+              <div class="flex justify-between items-center">
+                <label class="slider-label mb-0">Start Speed</label>
+                <span id="val-start-speed" class="text-[11px] font-mono text-cyan-400">0.0</span>
+              </div>
+              <input type="range" id="slider-start-speed" min="0" max="25" step="0.5" value="5"
+                class="slider" oninput="onSliderChange()">
+            </div>
+            <div>
+              <div class="flex justify-between items-center">
+                <label class="slider-label mb-0">End Speed</label>
+                <span id="val-end-speed" class="text-[11px] font-mono text-cyan-400">0.0</span>
+              </div>
+              <input type="range" id="slider-end-speed" min="0" max="25" step="0.5" value="5"
+                class="slider" oninput="onSliderChange()">
+            </div>
+          </div>
+
+          <!-- Incline -->
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div>
+              <div class="flex justify-between items-center">
+                <label class="slider-label mb-0">Start Incline</label>
+                <span id="val-start-incline" class="text-[11px] font-mono text-orange-400">0.0%</span>
+              </div>
+              <input type="range" id="slider-start-incline" min="0" max="15" step="0.5" value="0"
+                class="slider slider-incline" oninput="onSliderChange()">
+            </div>
+            <div>
+              <div class="flex justify-between items-center">
+                <label class="slider-label mb-0">End Incline</label>
+                <span id="val-end-incline" class="text-[11px] font-mono text-orange-400">0.0%</span>
+              </div>
+              <input type="range" id="slider-end-incline" min="0" max="15" step="0.5" value="0"
+                class="slider slider-incline" oninput="onSliderChange()">
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex gap-1.5 pt-1">
+            <button onclick="duplicateSelected()" class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 transition">
+              <i class="ph ph-copy text-sm"></i> Duplicate
+            </button>
+            <button onclick="deleteSelected()" class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-900/50 text-xs text-red-400 transition">
+              <i class="ph ph-trash text-sm"></i> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Export -->
+      <div class="px-3 py-2 border-t border-slate-800 flex-shrink-0">
+        <button onclick="exportWorkout()"
+          class="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white font-semibold text-sm shadow-lg shadow-cyan-500/20 transition-all active:scale-[0.98]">
+          <i class="ph-bold ph-download-simple text-base"></i>
+          Download Workout (JSON)
+        </button>
+      </div>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
