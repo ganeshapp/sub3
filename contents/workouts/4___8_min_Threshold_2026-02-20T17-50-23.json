@@ -1,0 +1,94 @@
+{
+  "metadata": {
+    "name": "4 × 8 min Threshold",
+    "description": "Raises lactate threshold. Teaches your body to clear lactate efficiently. Makes 10K pace feel more controlled",
+    "total_duration_seconds": 3180,
+    "total_distance_km": 11.42,
+    "average_speed_kmh": 12.9,
+    "average_pace": "4:39 /km",
+    "total_elevation_gain_m": 99
+  },
+  "intervals": [
+    {
+      "id": 1,
+      "type": "warmup",
+      "duration_seconds": 600,
+      "start_speed_kmh": 11,
+      "end_speed_kmh": 11,
+      "start_incline_pct": 1,
+      "end_incline_pct": 1
+    },
+    {
+      "id": 2,
+      "type": "active",
+      "duration_seconds": 480,
+      "start_speed_kmh": 14.5,
+      "end_speed_kmh": 14.5,
+      "start_incline_pct": 1,
+      "end_incline_pct": 1
+    },
+    {
+      "id": 3,
+      "type": "recovery",
+      "duration_seconds": 120,
+      "start_speed_kmh": 11,
+      "end_speed_kmh": 11,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 4,
+      "type": "active",
+      "duration_seconds": 480,
+      "start_speed_kmh": 14.5,
+      "end_speed_kmh": 14.5,
+      "start_incline_pct": 1,
+      "end_incline_pct": 1
+    },
+    {
+      "id": 5,
+      "type": "recovery",
+      "duration_seconds": 120,
+      "start_speed_kmh": 11,
+      "end_speed_kmh": 11,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 6,
+      "type": "active",
+      "duration_seconds": 480,
+      "start_speed_kmh": 14.5,
+      "end_speed_kmh": 14.5,
+      "start_incline_pct": 1,
+      "end_incline_pct": 1
+    },
+    {
+      "id": 7,
+      "type": "recovery",
+      "duration_seconds": 120,
+      "start_speed_kmh": 11,
+      "end_speed_kmh": 11,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 8,
+      "type": "active",
+      "duration_seconds": 480,
+      "start_speed_kmh": 14.5,
+      "end_speed_kmh": 14.5,
+      "start_incline_pct": 1,
+      "end_incline_pct": 1
+    },
+    {
+      "id": 9,
+      "type": "cooldown",
+      "duration_seconds": 300,
+      "start_speed_kmh": 9,
+      "end_speed_kmh": 9,
+      "start_incline_pct": 1,
+      "end_incline_pct": 0
+    }
+  ]
+}
