@@ -398,7 +398,7 @@ function switchTab(tab) {
     view.classList.remove('hidden');
   }
 
-  DOM.statsBar.classList.toggle('hidden', tab !== 'design');
+  DOM.statsBar.classList.toggle('invisible', tab !== 'design');
 
   if (tab === 'design') {
     setTimeout(() => renderCanvas(), 50);
@@ -1283,7 +1283,7 @@ async function openReadonly(file, isPrivate) {
   const view = $('#view-readonly');
   view.classList.remove('hidden');
 
-  DOM.statsBar.classList.add('hidden');
+  DOM.statsBar.classList.add('invisible');
   $('#readonly-title').textContent = 'Loading...';
   $('#readonly-badge').textContent = isPrivate ? 'Private' : 'Public';
   $('#readonly-badge').className = `text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${isPrivate ? 'bg-violet-900/30 text-violet-400' : 'bg-emerald-900/30 text-emerald-400'}`;
