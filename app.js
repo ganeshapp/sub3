@@ -21,7 +21,7 @@ const DEFAULTS = {
 const CANVAS_PAD = { top: 24, right: 16, bottom: 32, left: 52 };
 const INCLINE_MAX_PX = 50;
 const PUBLIC_REPO = 'ganeshapp/sub3';
-const PUBLIC_PATH = 'workouts';
+const PUBLIC_PATH = 'contents/workouts';
 
 // ── State ─────────────────────────────────────────────────────
 
@@ -70,6 +70,10 @@ const DOM = {
   settingPat:    $('#setting-pat'),
   settingRepo:   $('#setting-repo'),
   settingPath:   $('#setting-path'),
+  settingNewFolder: $('#setting-new-folder'),
+  newFolderRow:  $('#new-folder-row'),
+  repoSpinner:   $('#repo-spinner'),
+  folderSpinner: $('#folder-spinner'),
   tabMyCollection: $('#tab-my-collection'),
   fileInput:     $('#file-input'),
 };
@@ -144,6 +148,8 @@ function hideToast() {
 
 // ── Settings (localStorage) ──────────────────────────────────
 
+let patDebounce = null;
+
 function getSettings() {
   return {
     pat:  localStorage.getItem('sub3_pat') || '',
@@ -154,9 +160,17 @@ function getSettings() {
 
 function openSettings() {
   const s = getSettings();
-  DOM.settingPat.value  = s.pat;
-  DOM.settingRepo.value = s.repo;
-  DOM.settingPath.value = s.path;
+  DOM.settingPat.value = s.pat;
+  DOM.newFolderRow.classList.add('hidden');
+  DOM.settingNewFolder.value = '';
+
+  resetRepoDropdown();
+  resetFolderDropdown();
+
+  if (s.pat) {
+    loadRepos(s.pat, s.repo, s.path);
+  }
+
   DOM.settingsModal.classList.remove('hidden');
 }
 
@@ -166,8 +180,14 @@ function closeSettings() {
 
 function saveSettings() {
   const pat  = DOM.settingPat.value.trim();
-  const repo = DOM.settingRepo.value.trim();
-  const path = DOM.settingPath.value.trim() || '/';
+  const repo = DOM.settingRepo.value;
+
+  let path;
+  if (DOM.settingPath.value === '__new__') {
+    path = DOM.settingNewFolder.value.trim().replace(/^\/+|\/+$/g, '') || '/';
+  } else {
+    path = DOM.settingPath.value || '/';
+  }
 
   localStorage.setItem('sub3_pat', pat);
   localStorage.setItem('sub3_repo', repo);
@@ -181,6 +201,133 @@ function saveSettings() {
 function refreshMyCollectionTab() {
   const { pat } = getSettings();
   DOM.tabMyCollection.classList.toggle('hidden', !pat);
+}
+
+// ── Settings: Dynamic Dropdowns ──────────────────────────────
+
+function resetRepoDropdown() {
+  DOM.settingRepo.innerHTML = '<option value="">— Paste a PAT above to load repos —</option>';
+  DOM.settingRepo.disabled = true;
+}
+
+function resetFolderDropdown() {
+  DOM.settingPath.innerHTML = '<option value="/">— Select a repo first —</option>';
+  DOM.settingPath.disabled = true;
+}
+
+function onPatInput() {
+  clearTimeout(patDebounce);
+  const pat = DOM.settingPat.value.trim();
+
+  resetRepoDropdown();
+  resetFolderDropdown();
+  DOM.newFolderRow.classList.add('hidden');
+
+  if (pat.length < 10) return;
+
+  patDebounce = setTimeout(() => loadRepos(pat), 600);
+}
+
+async function loadRepos(pat, preselectedRepo, preselectedPath) {
+  DOM.repoSpinner.classList.remove('hidden');
+  DOM.settingRepo.disabled = true;
+
+  try {
+    let allRepos = [];
+    let page = 1;
+    while (true) {
+      const resp = await fetch(`https://api.github.com/user/repos?per_page=100&sort=updated&page=${page}`, {
+        headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' },
+      });
+      if (!resp.ok) {
+        if (resp.status === 401) throw new Error('Invalid token');
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      const batch = await resp.json();
+      allRepos = allRepos.concat(batch);
+      if (batch.length < 100) break;
+      page++;
+    }
+
+    DOM.settingRepo.innerHTML = '<option value="">— Select a repository —</option>';
+    for (const r of allRepos) {
+      const opt = document.createElement('option');
+      opt.value = r.full_name;
+      opt.textContent = r.full_name + (r.private ? ' 🔒' : '');
+      if (preselectedRepo && r.full_name === preselectedRepo) opt.selected = true;
+      DOM.settingRepo.appendChild(opt);
+    }
+    DOM.settingRepo.disabled = false;
+
+    if (preselectedRepo && DOM.settingRepo.value === preselectedRepo) {
+      loadFolders(pat, preselectedRepo, preselectedPath);
+    }
+  } catch (err) {
+    DOM.settingRepo.innerHTML = `<option value="">Error: ${err.message}</option>`;
+  } finally {
+    DOM.repoSpinner.classList.add('hidden');
+  }
+}
+
+function onRepoChange() {
+  const repo = DOM.settingRepo.value;
+  const pat  = DOM.settingPat.value.trim();
+  resetFolderDropdown();
+  DOM.newFolderRow.classList.add('hidden');
+
+  if (!repo || !pat) return;
+  loadFolders(pat, repo);
+}
+
+async function loadFolders(pat, repo, preselectedPath) {
+  DOM.folderSpinner.classList.remove('hidden');
+  DOM.settingPath.disabled = true;
+
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${repo}/contents/`, {
+      headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' },
+    });
+
+    let folders = [];
+    if (resp.ok) {
+      const items = await resp.json();
+      if (Array.isArray(items)) {
+        folders = items.filter(i => i.type === 'dir').map(i => i.name).sort();
+      }
+    }
+
+    DOM.settingPath.innerHTML = '<option value="/">(root)</option>';
+    for (const f of folders) {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = `/${f}`;
+      if (preselectedPath && f === preselectedPath) opt.selected = true;
+      DOM.settingPath.appendChild(opt);
+    }
+
+    const newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = '+ Create new folder…';
+    DOM.settingPath.appendChild(newOpt);
+
+    DOM.settingPath.disabled = false;
+
+    if (preselectedPath && preselectedPath !== '/' && !folders.includes(preselectedPath)) {
+      DOM.settingPath.value = '__new__';
+      DOM.settingNewFolder.value = preselectedPath;
+      DOM.newFolderRow.classList.remove('hidden');
+    }
+  } catch (err) {
+    DOM.settingPath.innerHTML = `<option value="/">Error loading folders</option>`;
+  } finally {
+    DOM.folderSpinner.classList.add('hidden');
+  }
+}
+
+function onFolderChange() {
+  const isNew = DOM.settingPath.value === '__new__';
+  DOM.newFolderRow.classList.toggle('hidden', !isNew);
+  if (isNew) DOM.settingNewFolder.focus();
 }
 
 // ── Tab Navigation ────────────────────────────────────────────
@@ -921,35 +1068,140 @@ async function fetchMyCollection() {
   }
 }
 
-// ── File Card Builder (simple list for now, full cards in Step 3) ──
+// ── Workout Card Builder (Step 3) ─────────────────────────────
 
 function buildFileCard(file, isPrivate) {
   const card = document.createElement('div');
   card.className = 'workout-card fade-in';
 
-  const name = file.name.replace(/\.json$/, '').replace(/_/g, ' ');
-  const sizeKB = file.size ? (file.size / 1024).toFixed(1) : '?';
+  const sparkCanvas = document.createElement('canvas');
+  sparkCanvas.className = 'workout-card-sparkline';
 
-  card.innerHTML = `
-    <div class="flex items-start justify-between gap-2">
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2 mb-1">
-          <i class="ph ph-barbell text-cyan-400 text-base flex-shrink-0"></i>
-          <span class="text-sm font-semibold truncate">${name}</span>
-        </div>
-        <div class="flex items-center gap-3 text-[11px] text-slate-500">
-          <span><i class="ph ph-file text-xs"></i> ${sizeKB} KB</span>
-          ${isPrivate ? '<span class="text-violet-400/70"><i class="ph ph-lock-simple text-xs"></i> Private</span>' : '<span class="text-emerald-400/70"><i class="ph ph-globe text-xs"></i> Public</span>'}
-        </div>
+  const body = document.createElement('div');
+  body.className = 'workout-card-body';
+  body.innerHTML = `
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <span class="text-sm font-semibold truncate leading-tight text-slate-100 card-title">Loading...</span>
+      <div class="workout-card-actions">
+        <button class="card-dl-btn" title="Download"><i class="ph ph-download-simple text-xs"></i></button>
       </div>
-      <button onclick="downloadFromUrl('${file.download_url}', '${file.name}')"
-        class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-cyan-400 transition" title="Download">
-        <i class="ph ph-download-simple text-sm"></i>
-      </button>
     </div>
+    <div class="card-desc text-[10px] text-slate-500 truncate mb-2 hidden"></div>
+    <div class="workout-card-metrics"></div>
   `;
 
+  card.appendChild(sparkCanvas);
+  card.appendChild(body);
+
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('.card-dl-btn')) return;
+    openReadonly(card._workoutData ? { ...file, _workoutData: card._workoutData } : file, isPrivate);
+  });
+
+  body.querySelector('.card-dl-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    downloadFromUrl(file.download_url, file.name);
+  });
+
+  fetchAndRenderCard(file, card, sparkCanvas, isPrivate);
   return card;
+}
+
+async function fetchAndRenderCard(file, card, sparkCanvas, isPrivate) {
+  try {
+    const resp = await fetch(file.download_url);
+    if (!resp.ok) throw new Error('fetch failed');
+    const data = await resp.json();
+
+    const meta = data.metadata || {};
+    const ivls = data.intervals || [];
+
+    const titleEl = card.querySelector('.card-title');
+    titleEl.textContent = meta.name || file.name.replace(/\.json$/, '').replace(/_/g, ' ');
+
+    const descEl = card.querySelector('.card-desc');
+    if (meta.description) {
+      descEl.textContent = meta.description;
+      descEl.classList.remove('hidden');
+    }
+
+    const metricsEl = card.querySelector('.workout-card-metrics');
+    const time = meta.total_duration_seconds != null ? fmtTime(meta.total_duration_seconds) : '—';
+    const dist = meta.total_distance_km != null ? `${meta.total_distance_km} km` : '—';
+    const speed = meta.average_speed_kmh != null ? `${meta.average_speed_kmh} km/h` : '—';
+    const pace = meta.average_pace || '—';
+    const elev = meta.total_elevation_gain_m != null ? `${meta.total_elevation_gain_m} m` : '—';
+
+    metricsEl.innerHTML = `
+      <span class="workout-card-metric"><i class="ph ph-timer text-cyan-400"></i>${time}</span>
+      <span class="workout-card-metric"><i class="ph ph-path text-emerald-400"></i>${dist}</span>
+      <span class="workout-card-metric"><i class="ph ph-lightning text-amber-400"></i>${speed}</span>
+      <span class="workout-card-metric"><i class="ph ph-gauge text-violet-400"></i>${pace}</span>
+      <span class="workout-card-metric"><i class="ph ph-mountains text-orange-400"></i>${elev}</span>
+    `;
+
+    drawSparkline(sparkCanvas, ivls);
+
+    card._workoutData = data;
+    card._fileMeta = file;
+  } catch {
+    card.querySelector('.card-title').textContent = file.name.replace(/\.json$/, '').replace(/_/g, ' ');
+    card.querySelector('.workout-card-metrics').innerHTML =
+      '<span class="text-[10px] text-slate-600">Could not load details</span>';
+  }
+}
+
+function drawSparkline(canvas, intervals) {
+  if (!intervals.length) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = rect.width || 280;
+  const h = rect.height || 64;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+
+  const c = canvas.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const pad = { left: 4, right: 4, top: 6, bottom: 4 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+  const totalTime = intervals.reduce((s, b) => s + (b.duration_seconds || 0), 0);
+  if (totalTime <= 0) return;
+
+  const allSpeeds = intervals.flatMap(b => [b.start_speed_kmh || 0, b.end_speed_kmh || 0]);
+  const maxSpeed = Math.max(12, ...allSpeeds) * 1.15;
+  const bottom = pad.top + plotH;
+
+  let x = pad.left;
+  for (const block of intervals) {
+    const bw = ((block.duration_seconds || 0) / totalTime) * plotW;
+    const startH = ((block.start_speed_kmh || 0) / maxSpeed) * plotH;
+    const endH = ((block.end_speed_kmh || 0) / maxSpeed) * plotH;
+    const theme = BLOCK_THEME[block.type] || BLOCK_THEME.active;
+
+    const grad = c.createLinearGradient(x, bottom - Math.max(startH, endH), x, bottom);
+    grad.addColorStop(0, theme.gradient[1] + 'cc');
+    grad.addColorStop(1, theme.gradient[0] + '66');
+
+    c.beginPath();
+    c.moveTo(x, bottom);
+    c.lineTo(x, bottom - startH);
+    c.lineTo(x + bw, bottom - endH);
+    c.lineTo(x + bw, bottom);
+    c.closePath();
+    c.fillStyle = grad;
+    c.fill();
+
+    c.strokeStyle = theme.glow + '55';
+    c.lineWidth = 0.5;
+    c.stroke();
+
+    x += bw;
+  }
 }
 
 function downloadFromUrl(url, filename) {
@@ -962,6 +1214,288 @@ function downloadFromUrl(url, filename) {
   document.body.removeChild(a);
   showToast(`Downloading ${filename}`, 'info');
 }
+
+// ── Read-Only View (Step 4) ───────────────────────────────────
+
+let readonlyData = null;
+let readonlyFile = null;
+let readonlyIsPrivate = false;
+let readonlyReturnTab = 'collection';
+
+const readonlyCanvas  = $('#readonly-canvas');
+const readonlyCtx     = readonlyCanvas.getContext('2d');
+const readonlyWrapper = $('#readonly-canvas-wrapper');
+
+async function openReadonly(file, isPrivate) {
+  readonlyFile = file;
+  readonlyIsPrivate = isPrivate;
+  readonlyReturnTab = activeTab;
+
+  showAllViews(false);
+  const view = $('#view-readonly');
+  view.classList.remove('hidden');
+
+  DOM.statsBar.classList.add('hidden');
+  $('#readonly-title').textContent = 'Loading...';
+  $('#readonly-badge').textContent = isPrivate ? 'Private' : 'Public';
+  $('#readonly-badge').className = `text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full ${isPrivate ? 'bg-violet-900/30 text-violet-400' : 'bg-emerald-900/30 text-emerald-400'}`;
+  $('#btn-delete-readonly').classList.toggle('hidden', !isPrivate);
+  $('#readonly-desc-bar').classList.add('hidden');
+
+  try {
+    let data;
+    if (file._workoutData) {
+      data = file._workoutData;
+    } else {
+      const resp = await fetch(file.download_url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      data = await resp.json();
+    }
+    readonlyData = data;
+
+    const meta = data.metadata || {};
+    $('#readonly-title').textContent = meta.name || file.name.replace(/\.json$/, '');
+
+    if (meta.description) {
+      $('#readonly-desc').textContent = meta.description;
+      $('#readonly-desc-bar').classList.remove('hidden');
+    }
+
+    const statsBar = $('#readonly-stats');
+    const time = meta.total_duration_seconds != null ? fmtTime(meta.total_duration_seconds) : '—';
+    const dist = meta.total_distance_km != null ? `${meta.total_distance_km} km` : '—';
+    const speed = meta.average_speed_kmh != null ? `${meta.average_speed_kmh} km/h` : '—';
+    const pace = meta.average_pace || '—';
+    const elev = meta.total_elevation_gain_m != null ? `${meta.total_elevation_gain_m} m` : '—';
+
+    statsBar.innerHTML = `
+      <div class="stat-card"><i class="ph ph-timer text-cyan-400"></i><div><div class="stat-label">Time</div><div class="stat-value">${time}</div></div></div>
+      <div class="stat-card"><i class="ph ph-path text-emerald-400"></i><div><div class="stat-label">Distance</div><div class="stat-value">${dist}</div></div></div>
+      <div class="stat-card"><i class="ph ph-lightning text-amber-400"></i><div><div class="stat-label">Avg Speed</div><div class="stat-value">${speed}</div></div></div>
+      <div class="stat-card"><i class="ph ph-gauge text-violet-400"></i><div><div class="stat-label">Avg Pace</div><div class="stat-value">${pace}</div></div></div>
+      <div class="stat-card"><i class="ph ph-mountains text-orange-400"></i><div><div class="stat-label">Elevation</div><div class="stat-value">${elev}</div></div></div>
+    `;
+
+    setTimeout(() => renderReadonlyCanvas(data.intervals || []), 60);
+  } catch (err) {
+    $('#readonly-title').textContent = 'Error loading workout';
+    showToast(err.message, 'error');
+  }
+}
+
+function renderReadonlyCanvas(ivls) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = readonlyWrapper.getBoundingClientRect();
+  readonlyCanvas.width = rect.width * dpr;
+  readonlyCanvas.height = rect.height * dpr;
+  readonlyCanvas.style.width = rect.width + 'px';
+  readonlyCanvas.style.height = rect.height + 'px';
+  readonlyCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const w = rect.width;
+  const h = rect.height;
+  readonlyCtx.clearRect(0, 0, w, h);
+
+  if (!ivls.length) return;
+
+  const pad = { top: 24, right: 16, bottom: 32, left: 52 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+  const totalTime = ivls.reduce((s, b) => s + (b.duration_seconds || 0), 0);
+  const allSpeeds = ivls.flatMap(b => [b.start_speed_kmh || 0, b.end_speed_kmh || 0]);
+  const maxSpeed = Math.max(15, ...allSpeeds) * 1.15;
+  const maxIncline = Math.max(5, ...ivls.flatMap(b => [b.start_incline_pct || 0, b.end_incline_pct || 0])) * 1.2;
+  const bottom = pad.top + plotH;
+
+  // Grid
+  const step = maxSpeed <= 16 ? 2 : maxSpeed <= 25 ? 5 : 10;
+  readonlyCtx.save();
+  for (let v = step; v < maxSpeed; v += step) {
+    const y = pad.top + plotH - (v / maxSpeed) * plotH;
+    readonlyCtx.strokeStyle = 'rgba(51,65,85,0.35)';
+    readonlyCtx.lineWidth = 1;
+    readonlyCtx.setLineDash([4, 4]);
+    readonlyCtx.beginPath();
+    readonlyCtx.moveTo(pad.left, y);
+    readonlyCtx.lineTo(pad.left + plotW, y);
+    readonlyCtx.stroke();
+    readonlyCtx.setLineDash([]);
+    readonlyCtx.fillStyle = '#475569';
+    readonlyCtx.font = '600 10px Inter, system-ui';
+    readonlyCtx.textAlign = 'right';
+    readonlyCtx.textBaseline = 'middle';
+    readonlyCtx.fillText(`${v}`, pad.left - 8, y);
+  }
+  readonlyCtx.restore();
+
+  // Blocks
+  let x = pad.left;
+  for (const block of ivls) {
+    const bw = ((block.duration_seconds || 0) / totalTime) * plotW;
+    const startH = ((block.start_speed_kmh || 0) / maxSpeed) * plotH;
+    const endH = ((block.end_speed_kmh || 0) / maxSpeed) * plotH;
+    const theme = BLOCK_THEME[block.type] || BLOCK_THEME.active;
+
+    const grad = readonlyCtx.createLinearGradient(x, bottom - Math.max(startH, endH), x, bottom);
+    grad.addColorStop(0, theme.gradient[1] + '99');
+    grad.addColorStop(1, theme.gradient[0] + '55');
+
+    readonlyCtx.beginPath();
+    readonlyCtx.moveTo(x, bottom);
+    readonlyCtx.lineTo(x, bottom - startH);
+    readonlyCtx.lineTo(x + bw, bottom - endH);
+    readonlyCtx.lineTo(x + bw, bottom);
+    readonlyCtx.closePath();
+    readonlyCtx.fillStyle = grad;
+    readonlyCtx.fill();
+    readonlyCtx.strokeStyle = theme.glow + '44';
+    readonlyCtx.lineWidth = 1;
+    readonlyCtx.stroke();
+
+    if (bw > 48) {
+      readonlyCtx.fillStyle = '#e2e8f0cc';
+      readonlyCtx.font = `600 ${bw > 80 ? 11 : 9}px Inter, system-ui`;
+      readonlyCtx.textAlign = 'center';
+      readonlyCtx.textBaseline = 'bottom';
+      const ly = bottom - Math.max(startH, endH) - 6;
+      readonlyCtx.fillText(theme.label, x + bw / 2, ly);
+      if (bw > 70) {
+        readonlyCtx.font = '500 9px Inter, system-ui';
+        readonlyCtx.fillStyle = '#94a3b8aa';
+        const txt = (block.start_speed_kmh || 0) === (block.end_speed_kmh || 0)
+          ? `${block.start_speed_kmh} km/h`
+          : `${block.start_speed_kmh}→${block.end_speed_kmh}`;
+        readonlyCtx.fillText(txt, x + bw / 2, ly + 13);
+      }
+    }
+    x += bw;
+  }
+
+  // Incline overlay
+  if (maxIncline > 0) {
+    const incH = INCLINE_MAX_PX;
+    readonlyCtx.save();
+    readonlyCtx.globalAlpha = 0.3;
+    readonlyCtx.beginPath();
+    readonlyCtx.moveTo(pad.left, bottom);
+    x = pad.left;
+    for (const block of ivls) {
+      const bw = ((block.duration_seconds || 0) / totalTime) * plotW;
+      const sH = ((block.start_incline_pct || 0) / maxIncline) * incH;
+      const eH = ((block.end_incline_pct || 0) / maxIncline) * incH;
+      readonlyCtx.lineTo(x, bottom - sH);
+      readonlyCtx.lineTo(x + bw, bottom - eH);
+      x += bw;
+    }
+    readonlyCtx.lineTo(x, bottom);
+    readonlyCtx.closePath();
+    const ig = readonlyCtx.createLinearGradient(0, bottom - incH, 0, bottom);
+    ig.addColorStop(0, '#f97316');
+    ig.addColorStop(1, '#f9731600');
+    readonlyCtx.fillStyle = ig;
+    readonlyCtx.fill();
+    readonlyCtx.restore();
+  }
+
+  // Time axis
+  readonlyCtx.save();
+  readonlyCtx.fillStyle = '#475569';
+  readonlyCtx.font = '500 9px Inter, system-ui';
+  readonlyCtx.textAlign = 'center';
+  readonlyCtx.textBaseline = 'top';
+  readonlyCtx.fillText(fmtTime(0), pad.left, bottom + 6);
+  let acc = 0;
+  x = pad.left;
+  for (const block of ivls) {
+    const bw = ((block.duration_seconds || 0) / totalTime) * plotW;
+    acc += block.duration_seconds || 0;
+    x += bw;
+    readonlyCtx.strokeStyle = 'rgba(51,65,85,0.4)';
+    readonlyCtx.lineWidth = 1;
+    readonlyCtx.beginPath();
+    readonlyCtx.moveTo(x, pad.top);
+    readonlyCtx.lineTo(x, bottom + 3);
+    readonlyCtx.stroke();
+    readonlyCtx.fillText(fmtTime(acc), x, bottom + 6);
+  }
+  readonlyCtx.restore();
+}
+
+function showAllViews(show) {
+  document.querySelectorAll('.view-panel').forEach(p => p.classList.add('hidden'));
+}
+
+function closeReadonly() {
+  readonlyData = null;
+  readonlyFile = null;
+  switchTab(readonlyReturnTab);
+}
+
+function downloadReadonly() {
+  if (!readonlyData) return;
+  const json = JSON.stringify(readonlyData, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const name = readonlyData.metadata?.name || 'workout';
+  a.download = `${sanitizeFilename(name)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function deleteReadonly() {
+  if (!readonlyFile || !readonlyIsPrivate) return;
+
+  const name = readonlyData?.metadata?.name || readonlyFile.name;
+  if (!confirm(`Delete "${name}" from your repository? This cannot be undone.`)) return;
+
+  const { pat, repo } = getSettings();
+  if (!pat || !repo) {
+    showToast('GitHub settings not configured', 'error');
+    return;
+  }
+
+  showToast('Deleting...', 'loading');
+
+  try {
+    const sha = readonlyFile.sha;
+    if (!sha) throw new Error('Missing file SHA — refresh and try again');
+
+    const resp = await fetch(`https://api.github.com/repos/${repo}/contents/${readonlyFile.path}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify({
+        message: `Delete workout: ${name}`,
+        sha,
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.message || `HTTP ${resp.status}`);
+    }
+
+    showToast(`Deleted "${name}"`, 'success');
+    closeReadonly();
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`, 'error');
+  }
+}
+
+// Resize observer for readonly canvas
+const roResizeObserver = new ResizeObserver(() => {
+  if (readonlyData && !$('#view-readonly').classList.contains('hidden')) {
+    renderReadonlyCanvas(readonlyData.intervals || []);
+  }
+});
+roResizeObserver.observe(readonlyWrapper);
 
 // ── Resize Observer ───────────────────────────────────────────
 
