@@ -19,7 +19,7 @@ const DEFAULTS = {
 };
 
 const CANVAS_PAD = { top: 24, right: 16, bottom: 32, left: 52 };
-const INCLINE_MAX_PX = 50;
+const INCLINE_MAX_PX = 120;
 const PUBLIC_REPO = 'ganeshapp/sub3';
 const PUBLIC_PATH = 'contents/workouts';
 
@@ -76,6 +76,8 @@ const DOM = {
   folderSpinner: $('#folder-spinner'),
   tabMyCollection: $('#tab-my-collection'),
   fileInput:     $('#file-input'),
+  settingMaxSpeed:   $('#setting-max-speed'),
+  settingMaxIncline: $('#setting-max-incline'),
 };
 
 // ── Utility ───────────────────────────────────────────────────
@@ -98,6 +100,34 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 function sanitizeFilename(name) {
   return name.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+// ── Treadmill Limits ──────────────────────────────────────────
+
+function getTreadmillLimits() {
+  return {
+    maxSpeed: parseFloat(localStorage.getItem('sub3_max_speed')) || 20,
+    maxIncline: parseInt(localStorage.getItem('sub3_max_incline')) || 18,
+  };
+}
+
+function applySliderLimits() {
+  const { maxSpeed, maxIncline } = getTreadmillLimits();
+  DOM.startSpeed.max = maxSpeed;
+  DOM.endSpeed.max = maxSpeed;
+  DOM.startIncline.max = maxIncline;
+  DOM.endIncline.max = maxIncline;
+}
+
+function capIntervals(ivls) {
+  const { maxSpeed, maxIncline } = getTreadmillLimits();
+  return ivls.map(b => ({
+    ...b,
+    start_speed_kmh: Math.min(b.start_speed_kmh ?? 0, maxSpeed),
+    end_speed_kmh: Math.min(b.end_speed_kmh ?? 0, maxSpeed),
+    start_incline_pct: Math.min(b.start_incline_pct ?? 0, maxIncline),
+    end_incline_pct: Math.min(b.end_incline_pct ?? 0, maxIncline),
+  }));
 }
 
 // ── Toast Notifications ───────────────────────────────────────
@@ -155,12 +185,16 @@ function getSettings() {
     pat:  localStorage.getItem('sub3_pat') || '',
     repo: localStorage.getItem('sub3_repo') || '',
     path: localStorage.getItem('sub3_path') || '/',
+    maxSpeed: parseFloat(localStorage.getItem('sub3_max_speed')) || 20,
+    maxIncline: parseInt(localStorage.getItem('sub3_max_incline')) || 18,
   };
 }
 
 function openSettings() {
   const s = getSettings();
   DOM.settingPat.value = s.pat;
+  DOM.settingMaxSpeed.value = s.maxSpeed;
+  DOM.settingMaxIncline.value = s.maxIncline;
   DOM.newFolderRow.classList.add('hidden');
   DOM.settingNewFolder.value = '';
 
@@ -189,12 +223,27 @@ function saveSettings() {
     path = DOM.settingPath.value || '/';
   }
 
+  const maxSpeed = clamp(parseFloat(DOM.settingMaxSpeed.value) || 20, 5, 40);
+  const maxIncline = clamp(parseInt(DOM.settingMaxIncline.value) || 18, 1, 40);
+
   localStorage.setItem('sub3_pat', pat);
   localStorage.setItem('sub3_repo', repo);
   localStorage.setItem('sub3_path', path);
+  localStorage.setItem('sub3_max_speed', maxSpeed);
+  localStorage.setItem('sub3_max_incline', maxIncline);
+
+  applySliderLimits();
+
+  for (const b of intervals) {
+    b.start_speed_kmh = Math.min(b.start_speed_kmh, maxSpeed);
+    b.end_speed_kmh = Math.min(b.end_speed_kmh, maxSpeed);
+    b.start_incline_pct = Math.min(b.start_incline_pct, maxIncline);
+    b.end_incline_pct = Math.min(b.end_incline_pct, maxIncline);
+  }
 
   closeSettings();
   refreshMyCollectionTab();
+  render();
   showToast('Settings saved', 'success');
 }
 
@@ -399,14 +448,15 @@ function calcStats() {
 
 function addInterval(type) {
   const d = DEFAULTS[type];
+  const { maxSpeed, maxIncline } = getTreadmillLimits();
   intervals.push({
     id: nextId++,
     type,
     duration_seconds: d.duration,
-    start_speed_kmh: d.startSpeed,
-    end_speed_kmh: d.endSpeed,
-    start_incline_pct: d.startIncline,
-    end_incline_pct: d.endIncline,
+    start_speed_kmh: Math.min(d.startSpeed, maxSpeed),
+    end_speed_kmh: Math.min(d.endSpeed, maxSpeed),
+    start_incline_pct: Math.min(d.startIncline, maxIncline),
+    end_incline_pct: Math.min(d.endIncline, maxIncline),
   });
   selectedId = intervals[intervals.length - 1].id;
   render();
@@ -452,8 +502,8 @@ function onSliderChange() {
 
   DOM.valStartSpeed.textContent   = block.start_speed_kmh.toFixed(1);
   DOM.valEndSpeed.textContent     = block.end_speed_kmh.toFixed(1);
-  DOM.valStartIncline.textContent = `${block.start_incline_pct.toFixed(1)}%`;
-  DOM.valEndIncline.textContent   = `${block.end_incline_pct.toFixed(1)}%`;
+  DOM.valStartIncline.textContent = `${Math.round(block.start_incline_pct)}%`;
+  DOM.valEndIncline.textContent   = `${Math.round(block.end_incline_pct)}%`;
 
   renderStats();
   renderCanvas();
@@ -518,9 +568,9 @@ function renderCanvas() {
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
   const totalTime = intervals.reduce((s, b) => s + b.duration_seconds, 0);
-  const allSpeeds = intervals.flatMap(b => [b.start_speed_kmh, b.end_speed_kmh]);
-  const maxSpeed = Math.max(15, ...allSpeeds) * 1.15;
-  const maxIncline = Math.max(5, ...intervals.flatMap(b => [b.start_incline_pct, b.end_incline_pct])) * 1.2;
+  const limits = getTreadmillLimits();
+  const maxSpeed = limits.maxSpeed + 3;
+  const maxIncline = limits.maxIncline;
 
   drawGrid(w, h, pad, plotW, plotH, maxSpeed);
   drawBlocks(pad, plotW, plotH, totalTime, maxSpeed);
@@ -637,7 +687,7 @@ function drawInclineOverlay(pad, plotW, plotH, totalTime, maxIncline) {
   let x = pad.left;
 
   ctx.save();
-  ctx.globalAlpha = 0.3;
+  ctx.globalAlpha = 0.35;
 
   ctx.beginPath();
   ctx.moveTo(pad.left, bottom);
@@ -654,14 +704,11 @@ function drawInclineOverlay(pad, plotW, plotH, totalTime, maxIncline) {
   ctx.lineTo(x, bottom);
   ctx.closePath();
 
-  const grad = ctx.createLinearGradient(0, bottom - inclineH, 0, bottom);
-  grad.addColorStop(0, '#f97316');
-  grad.addColorStop(1, '#f9731600');
-  ctx.fillStyle = grad;
+  ctx.fillStyle = '#94a3b8';
   ctx.fill();
 
-  ctx.globalAlpha = 0.6;
-  ctx.strokeStyle = '#f97316';
+  ctx.globalAlpha = 0.7;
+  ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([]);
   x = pad.left;
@@ -761,8 +808,8 @@ function renderInspector() {
 
   DOM.valStartSpeed.textContent   = block.start_speed_kmh.toFixed(1);
   DOM.valEndSpeed.textContent     = block.end_speed_kmh.toFixed(1);
-  DOM.valStartIncline.textContent = `${block.start_incline_pct.toFixed(1)}%`;
-  DOM.valEndIncline.textContent   = `${block.end_incline_pct.toFixed(1)}%`;
+  DOM.valStartIncline.textContent = `${Math.round(block.start_incline_pct)}%`;
+  DOM.valEndIncline.textContent   = `${Math.round(block.end_incline_pct)}%`;
 }
 
 // ── Canvas Interaction ────────────────────────────────────────
@@ -837,14 +884,15 @@ DOM.fileInput.addEventListener('change', (e) => {
         return;
       }
 
+      const { maxSpeed, maxIncline } = getTreadmillLimits();
       intervals = data.intervals.map((b, i) => ({
         id: nextId++,
         type: b.type || 'active',
         duration_seconds: b.duration_seconds || 300,
-        start_speed_kmh: b.start_speed_kmh ?? 5,
-        end_speed_kmh: b.end_speed_kmh ?? 5,
-        start_incline_pct: b.start_incline_pct ?? 0,
-        end_incline_pct: b.end_incline_pct ?? 0,
+        start_speed_kmh: Math.min(b.start_speed_kmh ?? 5, maxSpeed),
+        end_speed_kmh: Math.min(b.end_speed_kmh ?? 5, maxSpeed),
+        start_incline_pct: Math.min(b.start_incline_pct ?? 0, maxIncline),
+        end_incline_pct: Math.min(b.end_incline_pct ?? 0, maxIncline),
       }));
 
       if (data.metadata) {
@@ -1251,6 +1299,7 @@ async function openReadonly(file, isPrivate) {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       data = await resp.json();
     }
+    data.intervals = capIntervals(data.intervals || []);
     readonlyData = data;
 
     const meta = data.metadata || {};
@@ -1302,9 +1351,9 @@ function renderReadonlyCanvas(ivls) {
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
   const totalTime = ivls.reduce((s, b) => s + (b.duration_seconds || 0), 0);
-  const allSpeeds = ivls.flatMap(b => [b.start_speed_kmh || 0, b.end_speed_kmh || 0]);
-  const maxSpeed = Math.max(15, ...allSpeeds) * 1.15;
-  const maxIncline = Math.max(5, ...ivls.flatMap(b => [b.start_incline_pct || 0, b.end_incline_pct || 0])) * 1.2;
+  const limits = getTreadmillLimits();
+  const maxSpeed = limits.maxSpeed + 3;
+  const maxIncline = limits.maxIncline;
   const bottom = pad.top + plotH;
 
   // Grid
@@ -1389,11 +1438,25 @@ function renderReadonlyCanvas(ivls) {
     }
     readonlyCtx.lineTo(x, bottom);
     readonlyCtx.closePath();
-    const ig = readonlyCtx.createLinearGradient(0, bottom - incH, 0, bottom);
-    ig.addColorStop(0, '#f97316');
-    ig.addColorStop(1, '#f9731600');
-    readonlyCtx.fillStyle = ig;
+    readonlyCtx.fillStyle = '#94a3b8';
     readonlyCtx.fill();
+
+    readonlyCtx.globalAlpha = 0.7;
+    readonlyCtx.strokeStyle = '#cbd5e1';
+    readonlyCtx.lineWidth = 1.5;
+    x = pad.left;
+    readonlyCtx.beginPath();
+    for (let i = 0; i < ivls.length; i++) {
+      const block = ivls[i];
+      const bw = ((block.duration_seconds || 0) / totalTime) * plotW;
+      const sH = ((block.start_incline_pct || 0) / maxIncline) * incH;
+      const eH = ((block.end_incline_pct || 0) / maxIncline) * incH;
+      if (i === 0) readonlyCtx.moveTo(x, bottom - sH);
+      else readonlyCtx.lineTo(x, bottom - sH);
+      readonlyCtx.lineTo(x + bw, bottom - eH);
+      x += bw;
+    }
+    readonlyCtx.stroke();
     readonlyCtx.restore();
   }
 
@@ -1506,5 +1569,6 @@ resizeObserver.observe(wrapper);
 
 // ── Init ──────────────────────────────────────────────────────
 
+applySliderLimits();
 refreshMyCollectionTab();
 render();

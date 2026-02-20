@@ -188,7 +188,7 @@
                 <label class="slider-label mb-0">Start Speed</label>
                 <span id="val-start-speed" class="text-[11px] font-mono text-cyan-400">0.0</span>
               </div>
-              <input type="range" id="slider-start-speed" min="0" max="25" step="0.5" value="5"
+              <input type="range" id="slider-start-speed" min="0" max="20" step="0.1" value="5"
                 class="slider" oninput="onSliderChange()">
             </div>
             <div>
@@ -196,7 +196,7 @@
                 <label class="slider-label mb-0">End Speed</label>
                 <span id="val-end-speed" class="text-[11px] font-mono text-cyan-400">0.0</span>
               </div>
-              <input type="range" id="slider-end-speed" min="0" max="25" step="0.5" value="5"
+              <input type="range" id="slider-end-speed" min="0" max="20" step="0.1" value="5"
                 class="slider" oninput="onSliderChange()">
             </div>
           </div>
@@ -205,17 +205,17 @@
             <div>
               <div class="flex justify-between items-center">
                 <label class="slider-label mb-0">Start Incline</label>
-                <span id="val-start-incline" class="text-[11px] font-mono text-orange-400">0.0%</span>
+                <span id="val-start-incline" class="text-[11px] font-mono text-orange-400">0%</span>
               </div>
-              <input type="range" id="slider-start-incline" min="0" max="15" step="0.5" value="0"
+              <input type="range" id="slider-start-incline" min="0" max="18" step="1" value="0"
                 class="slider slider-incline" oninput="onSliderChange()">
             </div>
             <div>
               <div class="flex justify-between items-center">
                 <label class="slider-label mb-0">End Incline</label>
-                <span id="val-end-incline" class="text-[11px] font-mono text-orange-400">0.0%</span>
+                <span id="val-end-incline" class="text-[11px] font-mono text-orange-400">0%</span>
               </div>
-              <input type="range" id="slider-end-incline" min="0" max="15" step="0.5" value="0"
+              <input type="range" id="slider-end-incline" min="0" max="18" step="1" value="0"
                 class="slider slider-incline" oninput="onSliderChange()">
             </div>
           </div>
@@ -397,6 +397,24 @@
             <span class="text-[10px] text-slate-600 whitespace-nowrap">New folder</span>
           </div>
           <p class="text-[10px] text-slate-600 mt-1">Folder where workouts are stored. Choose existing or create new.</p>
+        </div>
+
+        <!-- Treadmill Limits -->
+        <div class="pt-3 mt-1 border-t border-slate-800">
+          <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Treadmill Limits</label>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[10px] text-slate-500 mb-1">Max Speed (km/h)</label>
+              <input type="number" id="setting-max-speed" min="5" max="40" step="0.5" value="20"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40 transition font-mono text-center">
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-500 mb-1">Max Incline (%)</label>
+              <input type="number" id="setting-max-incline" min="1" max="40" step="1" value="18"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40 transition font-mono text-center">
+            </div>
+          </div>
+          <p class="text-[10px] text-slate-600 mt-1">Sliders and imports will be capped to these values.</p>
         </div>
       </div>
 
