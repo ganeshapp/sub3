@@ -1,0 +1,76 @@
+{
+  "metadata": {
+    "name": "Threshold Run",
+    "description": "Ladder Run for strong finish",
+    "total_duration_seconds": 3000,
+    "total_distance_km": 10.82,
+    "average_speed_kmh": 13,
+    "average_pace": "4:37 /km",
+    "total_elevation_gain_m": 97
+  },
+  "intervals": [
+    {
+      "id": 1,
+      "type": "warmup",
+      "duration_seconds": 60,
+      "start_speed_kmh": 5,
+      "end_speed_kmh": 8,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 2,
+      "type": "warmup",
+      "duration_seconds": 240,
+      "start_speed_kmh": 8,
+      "end_speed_kmh": 12,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 3,
+      "type": "active",
+      "duration_seconds": 600,
+      "start_speed_kmh": 13.5,
+      "end_speed_kmh": 13.5,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 4,
+      "type": "active",
+      "duration_seconds": 600,
+      "start_speed_kmh": 14,
+      "end_speed_kmh": 14,
+      "start_incline_pct": 3,
+      "end_incline_pct": 3
+    },
+    {
+      "id": 5,
+      "type": "active",
+      "duration_seconds": 600,
+      "start_speed_kmh": 14.5,
+      "end_speed_kmh": 14.5,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 6,
+      "type": "active",
+      "duration_seconds": 600,
+      "start_speed_kmh": 15,
+      "end_speed_kmh": 15,
+      "start_incline_pct": 0,
+      "end_incline_pct": 0
+    },
+    {
+      "id": 7,
+      "type": "cooldown",
+      "duration_seconds": 300,
+      "start_speed_kmh": 8,
+      "end_speed_kmh": 5,
+      "start_incline_pct": 0,
+      "end_incline_pct": 10
+    }
+  ]
+}
